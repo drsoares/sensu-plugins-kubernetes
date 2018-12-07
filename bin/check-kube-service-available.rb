@@ -27,6 +27,10 @@
 #     --token TOKEN                Bearer token for authorization
 #     --token-file TOKEN-FILE      File containing bearer token for authorization
 # -l, --list SERVICES              List of services to check (required)
+# -n NAMESPACES,                   Exclude the specified list of namespaces
+#     --exclude-namespace
+# -i NAMESPACES,                   Include the specified list of namespaces, an
+#     --include-namespace          empty list includes all namespaces
 # -p, --pending SECONDS            Time (in seconds) a pod may be pending for and be valid
 #
 # NOTES:
