@@ -56,12 +56,27 @@ class AllServicesUp < Sensu::Plugins::Kubernetes::CLI
          default: 0,
          proc: proc(&:to_i)
 
+  option :exclude_namespace,
+         description: 'Exclude the specified list of namespaces',
+         short: '-n NAMESPACES',
+         long: '--exclude-namespace',
+         proc: proc { |a| a.split(',') },
+         default: ''
+
+  option :include_namespace,
+         description: 'Include the specified list of namespaces',
+         short: '-i NAMESPACES',
+         long: '--include-namespace',
+         proc: proc { |a| a.split(',') },
+         default: ''
+
   def run
     services = parse_list(config[:service_list])
     failed_services = []
     s = client.get_services
     s.each do |a|
       next unless services.include?(a.metadata.name)
+      next unless should_exclude_namespace(a.metadata.namespace)
       # Build the selector key so we can fetch the corresponding pod
       selector_key = []
       services.delete(a.metadata.name)
@@ -69,6 +84,7 @@ class AllServicesUp < Sensu::Plugins::Kubernetes::CLI
         selector_key << "#{k}=#{v}"
       end
       next if selector_key.empty?
+
       # Get the pod
       pod = nil
       begin
@@ -118,5 +134,10 @@ class AllServicesUp < Sensu::Plugins::Kubernetes::CLI
     return list.split(',') if list && list.include?(',')
     return [list] if list
     ['']
+  end
+
+  def should_exclude_namespace(namespace)
+    return !config[:include_namespace].include?(namespace) unless config[:include_namespace].empty?
+    config[:exclude_namespace].include?(namespace)
   end
 end
