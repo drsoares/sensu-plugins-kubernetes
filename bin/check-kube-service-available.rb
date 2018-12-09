@@ -51,7 +51,8 @@ class AllServicesUp < Sensu::Plugins::Kubernetes::CLI
          description: 'List of services to check',
          short: '-l SERVICES',
          long: '--list',
-         required: true
+         proc: proc { |a| a.split(',') },
+         default: ''
 
   option :pendingTime,
          description: 'Time (in seconds) a pod may be pending for and be valid',
@@ -75,15 +76,35 @@ class AllServicesUp < Sensu::Plugins::Kubernetes::CLI
          default: ''
 
   def run
-    services = parse_list(config[:service_list])
+    services = client.get_services
     failed_services = []
-    s = client.get_services
-    s.each do |a|
-      next unless services.include?(a.metadata.name)
-      next unless should_exclude_namespace(a.metadata.namespace)
+    unchecked_services = []
+
+    unless config[:service_list].nil?
+      services.keep_if { |a| config[:service_list].include?(a.metadata.name) }
+    end
+
+    unless config[:include_namespace].nil?
+      services.keep_if { |a| config[:include_namespace].include?(a.metadata.namespace) }
+    end
+
+    unless config[:exclude_namespace].nil?
+      services.delete_if { |a| config[:exclude_namespace].include?(a.metadata.namespace) }
+    end
+
+    if services.empty?
+      warning "No services to check"
+    end
+
+    services.each do |a|
+
+      unless services.metadata.name.nil?
+        unchecked_services << services.metadata.name
+        next
+      end
+
       # Build the selector key so we can fetch the corresponding pod
       selector_key = []
-      services.delete(a.metadata.name)
       a.spec.selector.to_h.each do |k, v|
         selector_key << "#{k}=#{v}"
       end
@@ -121,27 +142,19 @@ class AllServicesUp < Sensu::Plugins::Kubernetes::CLI
       end
     end
 
-    if failed_services.empty? && services.empty?
+    if failed_services.empty?
       ok 'All services are reporting as up'
     end
 
-    if !failed_services.empty?
+    unless failed_services.empty?
       critical "All services are not ready: #{failed_services.join(' ')}"
-    else
-      critical "Some services could not be checked: #{services.join(' ')}"
     end
-  rescue KubeException => e
+
+    unless unchecked_services.empty?
+      critical "Some services could not be checked: #{unchecked_services.join(' ')}"
+    end
+
+    rescue KubeException => e
     critical 'API error: ' << e.message
-  end
-
-  def parse_list(list)
-    return list.split(',') if list && list.include?(',')
-    return [list] if list
-    ['']
-  end
-
-  def should_exclude_namespace(namespace)
-    return !config[:include_namespace].include?(namespace) unless config[:include_namespace].empty?
-    config[:exclude_namespace].include?(namespace)
-  end
+   end
 end
